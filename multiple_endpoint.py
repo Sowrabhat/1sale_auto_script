@@ -8,37 +8,55 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 # Suppress specific warnings for insecure HTTPS requests
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
+
 class HostnameIgnoringAdapter(requests.adapters.HTTPAdapter):
     """Adapter to ignore hostname mismatches."""
+
     def init_poolmanager(self, *args, **kwargs):
         ctx = create_urllib3_context()
         ctx.check_hostname = False  # Disable hostname verification
-        kwargs['ssl_context'] = ctx
+        kwargs["ssl_context"] = ctx
         return super().init_poolmanager(*args, **kwargs)
+
 
 # Add the adapter to the session
 session = requests.Session()
-session.mount('https://', HostnameIgnoringAdapter())
+session.mount("https://", HostnameIgnoringAdapter())
 
 # API endpoints
 api_endpoints = {
     "ParseUrl": "https://content.fitforcloud.com/api/Products/ParseUrl",
-    "ParseUrlv2": "https://content.fitforcloud.com/api/Products/ParseUrlv2"
+    "ParseUrlv2": "https://content.fitforcloud.com/api/Products/ParseUrlv2",
 }
 
 # Load Excel file
-file_path = 'api_test.xlsx'
+file_path = "api_test.xlsx"
 df = pd.read_excel(file_path)
 
 # Add new columns for the data you want to extract
 columns_to_add = [
-    'name_api1', 'image_api1', 'brand_api1', 'categories_api1', 'price_api1', 'affiliateUrl_api1', 'description_api1',
-    'name_api2', 'image_api2', 'brand_api2', 'categories_api2', 'price_api2', 'affiliateUrl_api2', 'description_api2',
-    'error_api1', 'error_api2'
+    "name_api1",
+    "image_api1",
+    "brand_api1",
+    "categories_api1",
+    "price_api1",
+    "affiliateUrl_api1",
+    "description_api1",
+    "name_api2",
+    "image_api2",
+    "brand_api2",
+    "categories_api2",
+    "price_api2",
+    "affiliateUrl_api2",
+    "description_api2",
+    "error_api1",
+    "error_api2",
+    "status",  # Column for Pass/Fail status
 ]
 for column in columns_to_add:
     if column not in df.columns:
         df[column] = ""
+
 
 # Function to send the API request and handle responses
 def send_request(index, url, endpoint_name, endpoint_url):
@@ -47,24 +65,29 @@ def send_request(index, url, endpoint_name, endpoint_url):
 
     # API request body
     payload = {"url": url}
-    headers = {'Content-Type': 'application/json'}
+    headers = {"Content-Type": "application/json"}
 
     try:
         # Send POST request using the session
-        response = session.post(endpoint_url, json=payload, headers=headers, verify=False)
+        response = session.post(
+            endpoint_url, json=payload, headers=headers, verify=False
+        )
         response.raise_for_status()  # Raise exception for HTTP errors
         return index, endpoint_name, response.json()  # Parse the JSON response
     except requests.exceptions.RequestException as e:
         # Handle request errors
         return index, endpoint_name, {"error": str(e)}  # Return error in response
 
+
 # Initialize ThreadPoolExecutor for parallel requests
 with ThreadPoolExecutor() as executor:
     futures = []
     for index, row in df.iterrows():
-        url = row.get('API_URL', None)
+        url = row.get("API_URL", None)
         for endpoint_name, endpoint_url in api_endpoints.items():
-            futures.append(executor.submit(send_request, index, url, endpoint_name, endpoint_url))
+            futures.append(
+                executor.submit(send_request, index, url, endpoint_name, endpoint_url)
+            )
 
     # Process the responses as they complete
     for future in as_completed(futures):
@@ -76,34 +99,59 @@ with ThreadPoolExecutor() as executor:
         else:
             continue  # Skip unexpected endpoints
 
-        if response and 'error' not in response:
+        if response and "error" not in response:
             # Extract fields from the response and store in DataFrame
-            df.at[index, f'name{suffix}'] = response.get('name', '')
-            df.at[index, f'brand{suffix}'] = response.get('brand', '')
+            df.at[index, f"name{suffix}"] = response.get("name", "")
+            df.at[index, f"brand{suffix}"] = response.get("brand", "")
 
             # Handle the categories field safely
-            categories = response.get('categories', [])
+            categories = response.get("categories", [])
             if isinstance(categories, list):
-                df.at[index, f'categories{suffix}'] = ', '.join(str(cat) for cat in categories if cat is not None)
+                df.at[index, f"categories{suffix}"] = ", ".join(
+                    str(cat) for cat in categories if cat is not None
+                )
             else:
-                df.at[index, f'categories{suffix}'] = ''
+                df.at[index, f"categories{suffix}"] = ""
 
-            df.at[index, f'price{suffix}'] = response.get('price', {}).get('selling', '')
-            df.at[index, f'affiliateUrl{suffix}'] = response.get('affiliateUrl', '')
-            df.at[index, f'description{suffix}'] = response.get('description', '')
+            df.at[index, f"price{suffix}"] = response.get("price", {}).get(
+                "selling", ""
+            )
+            df.at[index, f"affiliateUrl{suffix}"] = response.get("affiliateUrl", "")
+            df.at[index, f"description{suffix}"] = response.get("description", "")
 
             # Handle multiple image URLs in JSON format
-            images = response.get('images', [])
+            images = response.get("images", [])
             if images and isinstance(images, list):
-                df.at[index, f'image{suffix}'] = json.dumps(images)
+                df.at[index, f"image{suffix}"] = json.dumps(images)
             else:
-                df.at[index, f'image{suffix}'] = json.dumps([])
+                df.at[index, f"image{suffix}"] = json.dumps([])
         else:
             # Log error details
-            df.at[index, f'error{suffix}'] = response.get('error', 'Unknown error')
+            df.at[index, f"error{suffix}"] = response.get("error", "Unknown error")
 
         print(f"Row {index}: Response from {endpoint_name} processed")
 
+# Add Pass/Fail logic
+for index, row in df.iterrows():
+    # Count non-empty responses from both APIs
+    responses = [
+        row["name_api1"],
+        row["brand_api1"],
+        row["categories_api1"],
+        row["price_api1"],
+        row["affiliateUrl_api1"],
+        row["description_api1"],
+        row["name_api2"],
+        row["brand_api2"],
+        row["categories_api2"],
+        row["price_api2"],
+        row["affiliateUrl_api2"],
+        row["description_api2"],
+    ]
+    non_empty_count = sum(1 for r in responses if r)  # Count non-empty fields
+
+    # Check if the count exceeds 4
+    df.at[index, "status"] = "Pass" if non_empty_count > 4 else "Fail"
+
 # Save results back to Excel
-df.to_excel('results_both_apis.xlsx', index=False)
-#haga
+df.to_excel("results_with_status.xlsx", index=False)
