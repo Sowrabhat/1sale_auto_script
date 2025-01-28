@@ -150,8 +150,8 @@ for index, row in df.iterrows():
     ]
     non_empty_count = sum(1 for r in responses if r)  # Count non-empty fields
 
-    # Check if the count exceeds 4
-    df.at[index, "status"] = "Pass" if non_empty_count > 4 else "Fail"
+    # Check if the count exceeds 7
+    df.at[index, "status"] = "Pass" if non_empty_count > 7 else "Fail"
 
 # Save results back to Excel
 df.to_excel("results_with_status.xlsx", index=False)
